@@ -85,6 +85,18 @@ class HkcwEngine2Plugin : public flutter::Plugin {
   // P1-3: Permission control
   void ConfigurePermissions();
   void SetupSecurityHandlers();
+  
+  // API Bridge: JavaScript SDK injection and message handling
+  void InjectHKCWSDK();
+  void SetupMessageBridge();
+  void HandleWebMessage(const std::string& message);
+  std::string LoadSDKScript();
+  
+  // Mouse Hook: Capture desktop clicks and forward to WebView
+  void SetupMouseHook();
+  void RemoveMouseHook();
+  static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
+  void SendClickToWebView(int x, int y, const char* event_type = "mouseup");
 
   HWND webview_host_hwnd_ = nullptr;
   HWND worker_w_hwnd_ = nullptr;
@@ -103,6 +115,11 @@ class HkcwEngine2Plugin : public flutter::Plugin {
   
   // P1-1: Shared WebView2 environment
   static Microsoft::WRL::ComPtr<ICoreWebView2Environment> shared_environment_;
+  
+  // Mouse Hook
+  HHOOK mouse_hook_ = nullptr;
+  static HkcwEngine2Plugin* hook_instance_;
+  bool enable_interaction_ = false;
 };
 
 }  // namespace hkcw_engine2

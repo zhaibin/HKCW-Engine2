@@ -14,15 +14,18 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final TextEditingController _urlController = TextEditingController(
-    text: 'https://www.bing.com',
+    text: 'file:///E:/Projects/HKCW-Engine2/test_api.html',
   );
   bool _isRunning = false;
-  bool _mouseTransparent = true;
+  bool _mouseTransparent = false;  // Disable for API testing
 
   @override
   void initState() {
     super.initState();
-    // Manual control - user clicks button to start
+    // Auto-start for API testing
+    Future.delayed(Duration(seconds: 1), () {
+      _startWallpaper();
+    });
   }
 
   Future<void> _startWallpaper() async {

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HKCW API Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .info {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .info-item {
+            margin: 10px 0;
+            font-size: 18px;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .test-button {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid white;
+            color: white;
+            padding: 30px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            backdrop-filter: blur(10px);
+        }
+        
+        .test-button:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+        
+        .test-button:active {
+            transform: translateY(0);
+        }
+        
+        #log {
+            background: rgba(0,0,0,0.5);
+            color: #00ff00;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .particle {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            background: white;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: particle-fade 1s forwards;
+        }
+        
+        @keyframes particle-fade {
+            to {
+                opacity: 0;
+                transform: scale(2);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Load HKCW SDK from HKCW-WEB project -->
+    <script src="https://theme-web.haokan.mobi/sdk/hkcw-engine.js"></script>
+    <div class="container">
+        <h1>🎮 HKCW API 测试</h1>
+        
+        <div class="info">
+            <div class="info-item">📦 SDK 版本: <span id="version">加载中...</span></div>
+            <div class="info-item">📺 屏幕尺寸: <span id="screen">加载中...</span></div>
+            <div class="info-item">🔍 DPI 缩放: <span id="dpi">加载中...</span></div>
+            <div class="info-item">🖱️ 交互模式: <span id="interaction">加载中...</span></div>
+        </div>
+        
+        <div class="button-grid">
+            <button id="btn-click" class="test-button">
+                🖱️ 测试点击<br>onClick
+            </button>
+            
+            <button id="btn-openurl" class="test-button">
+                🌐 打开网页<br>openURL
+            </button>
+            
+            <button id="btn-ready" class="test-button">
+                ✅ 就绪通知<br>ready
+            </button>
+            
+            <button id="btn-mouse" class="test-button">
+                🐭 鼠标跟踪<br>onMouse
+            </button>
+            
+            <button id="btn-keyboard" class="test-button">
+                ⌨️ 键盘监听<br>onKeyboard
+            </button>
+            
+            <button id="btn-debug" class="test-button">
+                🐛 启用调试<br>enableDebug
+            </button>
+        </div>
+        
+        <div id="log">等待 HKCW SDK 加载...</div>
+    </div>
+
+    <script>
+        // Wait for HKCW SDK to load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.HKCW) {
+                    initializeTests();
+                } else {
+                    addLog('❌ HKCW SDK 未加载！');
+                }
+            }, 500);
+        });
+        
+        function addLog(message) {
+            const log = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += '[' + timestamp + '] ' + message + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function initializeTests() {
+            addLog('✅ HKCW SDK 加载成功！');
+            
+            // Display SDK info
+            document.getElementById('version').textContent = HKCW.version;
+            document.getElementById('screen').textContent = 
+                HKCW.screenWidth + ' x ' + HKCW.screenHeight + ' px';
+            document.getElementById('dpi').textContent = HKCW.dpiScale + 'x';
+            document.getElementById('interaction').textContent = 
+                HKCW.interactionEnabled ? '✅ 启用' : '❌ 禁用';
+            
+            addLog('📊 屏幕: ' + HKCW.screenWidth + 'x' + HKCW.screenHeight);
+            addLog('🔍 DPI: ' + HKCW.dpiScale + 'x');
+            addLog('🎮 交互: ' + (HKCW.interactionEnabled ? '启用' : '禁用'));
+            addLog('');
+            addLog('🔧 自动注册所有按钮点击区域...');
+            
+            // Auto-register all buttons with debug borders
+            HKCW.onClick('#btn-click', function(x, y) {
+                addLog('🖱️ [按钮1] 测试点击被触发！坐标: (' + x + ', ' + y + ')');
+            }, {debug: true});
+            
+            HKCW.onClick('#btn-openurl', function(x, y) {
+                addLog('🌐 [按钮2] 打开网页被触发！');
+                HKCW.openURL('https://www.bing.com');
+            }, {debug: true});
+            
+            HKCW.onClick('#btn-ready', function(x, y) {
+                addLog('✅ [按钮3] 就绪通知被触发！');
+                HKCW.ready('Test Wallpaper - User Clicked');
+            }, {debug: true});
+            
+            HKCW.onClick('#btn-mouse', function(x, y) {
+                addLog('🐭 [按钮4] 鼠标跟踪被触发！');
+                addLog('  → 启用鼠标轨迹粒子效果');
+                enableMouseParticles();
+            }, {debug: true});
+            
+            HKCW.onClick('#btn-keyboard', function(x, y) {
+                addLog('⌨️ [按钮5] 键盘监听被触发！');
+                enableKeyboardMonitor();
+            }, {debug: true});
+            
+            HKCW.onClick('#btn-debug', function(x, y) {
+                addLog('🐛 [按钮6] 调试模式被触发！');
+                HKCW.enableDebug();
+            }, {debug: true});
+            
+            addLog('✅ 所有按钮点击区域已注册（2秒后生效）');
+            addLog('🔴 红色边框 = 点击区域');
+            addLog('');
+            addLog('💡 提示：现在点击任意按钮试试！');
+            
+            // Old click listeners for manual testing (kept as backup)
+            document.getElementById('btn-click').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮1被点击（这不应该触发，说明窗口不透明）');
+            });
+            
+            // Test 2: openURL
+            document.getElementById('btn-openurl').addEventListener('click', function() {
+                addLog('🌐 测试 openURL API');
+                HKCW.openURL('https://www.bing.com');
+                addLog('  → 已调用 openURL');
+            });
+            
+            // Test 3: ready
+            document.getElementById('btn-ready').addEventListener('click', function() {
+                addLog('✅ 测试 ready API');
+                HKCW.ready('Test Wallpaper v1.0');
+                addLog('  → 已发送就绪通知');
+            });
+            
+            // Test 4: onMouse
+            let mouseTrackingEnabled = false;
+            document.getElementById('btn-mouse').addEventListener('click', function() {
+                if (!mouseTrackingEnabled) {
+                    addLog('🐭 启用鼠标跟踪');
+                    HKCW.onMouse(function(event) {
+                        if (event.type === 'mousemove') {
+                            const cssX = event.x / HKCW.dpiScale;
+                            const cssY = event.y / HKCW.dpiScale;
+                            createParticle(cssX, cssY);
+                        }
+                    });
+                    mouseTrackingEnabled = true;
+                    addLog('  → 鼠标跟踪已启用（移动鼠标看粒子效果）');
+                } else {
+                    addLog('  ⚠️ 鼠标跟踪已经启用');
+                }
+            });
+            
+            // Test 5: onKeyboard
+            let keyboardEnabled = false;
+            document.getElementById('btn-keyboard').addEventListener('click', function() {
+                if (!keyboardEnabled) {
+                    addLog('⌨️ 启用键盘监听');
+                    HKCW.onKeyboard(function(event) {
+                        addLog('  键盘事件: ' + event.type + ', 键码: ' + event.keyCode);
+                    });
+                    keyboardEnabled = true;
+                    addLog('  → 键盘监听已启用（按任意键测试）');
+                } else {
+                    addLog('  ⚠️ 键盘监听已经启用');
+                }
+            });
+            
+            document.getElementById('btn-openurl').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮2被点击');
+            });
+            
+            document.getElementById('btn-ready').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮3被点击');
+            });
+            
+            document.getElementById('btn-mouse').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮4被点击');
+            });
+            
+            document.getElementById('btn-keyboard').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮5被点击');
+            });
+            
+            document.getElementById('btn-debug').addEventListener('click', function() {
+                addLog('⚠️ [原生点击] 按钮6被点击');
+            });
+            
+            // Auto notify ready
+            setTimeout(function() {
+                HKCW.ready('HKCW API Test Page');
+                addLog('📢 自动发送就绪通知');
+            }, 1000);
+        }
+        
+        let mouseParticlesEnabled = false;
+        function enableMouseParticles() {
+            if (mouseParticlesEnabled) {
+                addLog('  ⚠️ 粒子效果已经启用');
+                return;
+            }
+            
+            HKCW.onMouse(function(event) {
+                if (event.type === 'mousemove') {
+                    const cssX = event.x / HKCW.dpiScale;
+                    const cssY = event.y / HKCW.dpiScale;
+                    createParticle(cssX, cssY);
+                }
+            });
+            
+            mouseParticlesEnabled = true;
+            addLog('  ✅ 粒子效果已启用（移动鼠标查看）');
+        }
+        
+        let keyboardMonitorEnabled = false;
+        function enableKeyboardMonitor() {
+            if (keyboardMonitorEnabled) {
+                addLog('  ⚠️ 键盘监听已经启用');
+                return;
+            }
+            
+            HKCW.onKeyboard(function(event) {
+                addLog('  ⌨️ ' + event.type + ' keyCode: ' + event.keyCode);
+            });
+            
+            keyboardMonitorEnabled = true;
+            addLog('  ✅ 键盘监听已启用（按任意键测试）');
+        }
+        
+        function createParticle(x, y) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = x + 'px';
+            particle.style.top = y + 'px';
+            document.body.appendChild(particle);
+            
+            setTimeout(function() {
+                if (particle.parentNode) {
+                    document.body.removeChild(particle);
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
+

@@ -23,4 +23,7 @@ flutter:
       windows:
         pluginClass: HkcwEngine2Plugin
         fileName: hkcw_engine2_plugin.cpp
+  
+  assets:
+    - windows/hkcw_sdk.js
 

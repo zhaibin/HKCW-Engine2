@@ -113,6 +113,9 @@ bool URLValidator::MatchesPattern(const std::string& url, const std::string& pat
 // P1-1: Shared WebView2 environment (static)
 Microsoft::WRL::ComPtr<ICoreWebView2Environment> HkcwEngine2Plugin::shared_environment_;
 
+// Mouse Hook instance
+HkcwEngine2Plugin* HkcwEngine2Plugin::hook_instance_ = nullptr;
+
 namespace {
 
 // Window class name for WebView2 host
@@ -202,6 +205,9 @@ void HkcwEngine2Plugin::RegisterWithRegistrar(
 HkcwEngine2Plugin::HkcwEngine2Plugin() {
   std::cout << "[HKCW] Plugin initialized" << std::endl;
   
+  // Set hook instance
+  hook_instance_ = this;
+  
   // P1-2: Initialize cleanup timer
   last_cleanup_ = std::chrono::steady_clock::now();
   
@@ -218,11 +224,16 @@ HkcwEngine2Plugin::HkcwEngine2Plugin() {
 HkcwEngine2Plugin::~HkcwEngine2Plugin() {
   std::cout << "[HKCW] Plugin destructor - starting cleanup" << std::endl;
   
+  // Remove mouse hook
+  RemoveMouseHook();
+  
   // P0: Cleanup
   StopWallpaper();
   
   // P0-1: Cleanup all tracked resources
   ResourceTracker::Instance().CleanupAll();
+  
+  hook_instance_ = nullptr;
   
   std::cout << "[HKCW] Plugin cleanup complete" << std::endl;
 }
@@ -400,9 +411,9 @@ HWND HkcwEngine2Plugin::CreateWebViewHostWindow() {
   std::cout << "[HKCW] Creating child window: " << width << "x" << height << std::endl;
 
   // Create as CHILD window of WorkerW (this is the key!)
-  // Temporarily remove transparency to test if WebView shows
+  // For interactive mode, create without WS_EX_TRANSPARENT
   HWND hwnd = CreateWindowExW(
-      WS_EX_NOACTIVATE,  // Remove TRANSPARENT and LAYERED for testing
+      0,  // No extended styles for interactive mode
       L"STATIC",  // Use built-in STATIC class
       L"WebView2Host",
       WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,  // CHILD window
@@ -462,12 +473,34 @@ void HkcwEngine2Plugin::SetupWebView2(HWND hwnd, const std::string& url) {
           webview_controller_->put_Bounds(bounds);
           webview_controller_->put_IsVisible(TRUE);
 
-          // P1-3: Configure permissions and security
-          ConfigurePermissions();
-          SetupSecurityHandlers();
+              // P1-3: Configure permissions and security
+              ConfigurePermissions();
+              SetupSecurityHandlers();
+              
+              // API Bridge: Setup message bridge only (no SDK injection, user loads it)
+              SetupMessageBridge();
 
-          // Navigate
-          webview_->Navigate(wurl.c_str());
+              // Navigate
+              webview_->Navigate(wurl.c_str());
+              
+              // After navigation completes, send interaction mode
+              webview_->add_NavigationCompleted(
+                Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                  [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                    // Send interaction mode to JavaScript
+                    std::wstringstream script;
+                    script << L"(function() {"
+                           << L"  var event = new CustomEvent('hkcw:interactionMode', {"
+                           << L"    detail: { enabled: " << (enable_interaction_ ? L"true" : L"false") << L" }"
+                           << L"  });"
+                           << L"  window.dispatchEvent(event);"
+                           << L"  console.log('[HKCW] Interaction mode set to: " << (enable_interaction_ ? L"true" : L"false") << L"');"
+                           << L"})();";
+                    
+                    webview_->ExecuteScript(script.str().c_str(), nullptr);
+                    std::cout << "[HKCW] [API] Sent interaction mode to JS: " << enable_interaction_ << std::endl;
+                    return S_OK;
+                  }).Get(), nullptr);
           std::string url_str;
           for (wchar_t c : wurl) {
             if (c < 128) url_str.push_back(static_cast<char>(c));
@@ -525,9 +558,31 @@ void HkcwEngine2Plugin::SetupWebView2(HWND hwnd, const std::string& url) {
               // P1-3: Configure permissions and security
               ConfigurePermissions();
               SetupSecurityHandlers();
+              
+              // API Bridge: Setup message bridge only (no SDK injection, user loads it)
+              SetupMessageBridge();
 
               // Navigate to URL
               webview_->Navigate(wurl.c_str());
+              
+              // After navigation completes, send interaction mode
+              webview_->add_NavigationCompleted(
+                Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                  [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                    // Send interaction mode to JavaScript
+                    std::wstringstream script;
+                    script << L"(function() {"
+                           << L"  var event = new CustomEvent('hkcw:interactionMode', {"
+                           << L"    detail: { enabled: " << (enable_interaction_ ? L"true" : L"false") << L" }"
+                           << L"  });"
+                           << L"  window.dispatchEvent(event);"
+                           << L"  console.log('[HKCW] Interaction mode set to: " << (enable_interaction_ ? L"true" : L"false") << L"');"
+                           << L"})();";
+                    
+                    webview_->ExecuteScript(script.str().c_str(), nullptr);
+                    std::cout << "[HKCW] [API] Sent interaction mode to JS: " << enable_interaction_ << std::endl;
+                    return S_OK;
+                  }).Get(), nullptr);
               
               // Convert wstring to string for logging
               std::string url_str;
@@ -676,6 +731,262 @@ void HkcwEngine2Plugin::SetupSecurityHandlers() {
   std::cout << "[HKCW] [Security] Security handlers installed" << std::endl;
 }
 
+// API Bridge: Load SDK JavaScript
+std::string HkcwEngine2Plugin::LoadSDKScript() {
+  std::cout << "[HKCW] [API] Loading HKCW SDK script..." << std::endl;
+  
+  // Get SDK file path
+  char module_path[MAX_PATH];
+  GetModuleFileNameA(nullptr, module_path, MAX_PATH);
+  std::string exe_dir(module_path);
+  size_t last_slash = exe_dir.find_last_of("\\/");
+  if (last_slash != std::string::npos) {
+    exe_dir = exe_dir.substr(0, last_slash);
+  }
+  
+  std::string sdk_path = exe_dir + "\\data\\flutter_assets\\packages\\hkcw_engine2\\hkcw_sdk.js";
+  
+  std::ifstream file(sdk_path);
+  if (!file.is_open()) {
+    std::cout << "[HKCW] [API] WARNING: SDK file not found at: " << sdk_path << std::endl;
+    std::cout << "[HKCW] [API] Using embedded SDK script" << std::endl;
+    
+    // Return embedded minimal SDK
+    return R"(
+(function() {
+  window.HKCW = {
+    version: '3.1.0',
+    dpiScale: window.devicePixelRatio || 1,
+    screenWidth: screen.width * (window.devicePixelRatio || 1),
+    screenHeight: screen.height * (window.devicePixelRatio || 1),
+    interactionEnabled: true,
+    
+    onClick: function(element, callback, options) {
+      console.log('[HKCW] onClick registered');
+      setTimeout(function() {
+        var el = (typeof element === 'string') ? document.querySelector(element) : element;
+        if (el) el.addEventListener('click', function(e) { callback(e.clientX, e.clientY); });
+      }, 2000);
+    },
+    
+    openURL: function(url) {
+      console.log('[HKCW] Opening URL:', url);
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({type: 'openURL', url: url});
+      }
+    },
+    
+    ready: function(name) {
+      console.log('[HKCW] Ready:', name);
+      if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({type: 'ready', name: name});
+      }
+    },
+    
+    onMouse: function(callback) {
+      window.addEventListener('hkcw:mouse', function(e) { callback(e.detail); });
+    },
+    
+    onKeyboard: function(callback) {
+      window.addEventListener('hkcw:keyboard', function(e) { callback(e.detail); });
+    },
+    
+    enableDebug: function() {
+      console.log('[HKCW] Debug enabled');
+    }
+  };
+  console.log('[HKCW SDK] Loaded v' + HKCW.version);
+})();
+)";
+  }
+  
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string script = buffer.str();
+  file.close();
+  
+  std::cout << "[HKCW] [API] SDK script loaded (" << script.length() << " bytes)" << std::endl;
+  return script;
+}
+
+// API Bridge: Inject SDK into page
+void HkcwEngine2Plugin::InjectHKCWSDK() {
+  if (!webview_) return;
+  
+  std::cout << "[HKCW] [API] Injecting HKCW SDK..." << std::endl;
+  
+  // Load SDK script
+  std::string sdk_script = LoadSDKScript();
+  std::wstring wsdk_script(sdk_script.begin(), sdk_script.end());
+  
+  // Inject on every navigation
+  webview_->AddScriptToExecuteOnDocumentCreated(
+    wsdk_script.c_str(),
+    Microsoft::WRL::Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+      [](HRESULT result, LPCWSTR id) -> HRESULT {
+        if (SUCCEEDED(result)) {
+          std::wcout << L"[HKCW] [API] SDK injected successfully, ID: " << id << std::endl;
+        } else {
+          std::cout << "[HKCW] [API] ERROR: Failed to inject SDK: " << std::hex << result << std::endl;
+        }
+        return S_OK;
+      }).Get());
+}
+
+// API Bridge: Setup message bridge
+void HkcwEngine2Plugin::SetupMessageBridge() {
+  if (!webview_) return;
+  
+  std::cout << "[HKCW] [API] Setting up message bridge..." << std::endl;
+  
+  webview_->add_WebMessageReceived(
+    Microsoft::WRL::Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+      [this](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+        LPWSTR message;
+        args->get_WebMessageAsJson(&message);
+        
+        std::wstring wmessage(message);
+        std::string msg;
+        for (wchar_t c : wmessage) {
+          if (c < 128) msg.push_back(static_cast<char>(c));
+        }
+        
+        HandleWebMessage(msg);
+        
+        CoTaskMemFree(message);
+        return S_OK;
+      }).Get(), nullptr);
+  
+  std::cout << "[HKCW] [API] Message bridge ready" << std::endl;
+}
+
+// API Bridge: Handle messages from web
+void HkcwEngine2Plugin::HandleWebMessage(const std::string& message) {
+  std::cout << "[HKCW] [API] Received message: " << message << std::endl;
+  
+  // Parse JSON message (support both uppercase and lowercase)
+  if (message.find("\"type\":\"OPEN_URL\"") != std::string::npos || 
+      message.find("\"type\":\"openURL\"") != std::string::npos) {
+    // Extract URL from JSON
+    size_t url_start = message.find("\"url\":\"") + 7;
+    size_t url_end = message.find("\"", url_start);
+    if (url_start != std::string::npos && url_end != std::string::npos) {
+      std::string url = message.substr(url_start, url_end - url_start);
+      std::cout << "[HKCW] [API] Opening URL: " << url << std::endl;
+      
+      // Open URL using ShellExecute
+      std::wstring wurl(url.begin(), url.end());
+      ShellExecuteW(nullptr, L"open", wurl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+  }
+  else if (message.find("\"type\":\"READY\"") != std::string::npos || 
+           message.find("\"type\":\"ready\"") != std::string::npos) {
+    // Extract name
+    size_t name_start = message.find("\"name\":\"") + 8;
+    size_t name_end = message.find("\"", name_start);
+    if (name_start != std::string::npos && name_end != std::string::npos) {
+      std::string name = message.substr(name_start, name_end - name_start);
+      std::cout << "[HKCW] [API] Wallpaper ready: " << name << std::endl;
+    }
+  }
+  else if (message.find("\"type\":\"LOG\"") != std::string::npos) {
+    // Extract log message
+    size_t msg_start = message.find("\"message\":\"") + 11;
+    size_t msg_end = message.find("\"", msg_start);
+    if (msg_start != std::string::npos && msg_end != std::string::npos) {
+      std::string log_msg = message.substr(msg_start, msg_end - msg_start);
+      std::cout << "[HKCW] [WebLog] " << log_msg << std::endl;
+    }
+  }
+  else {
+    std::cout << "[HKCW] [API] Unknown message type (showing raw): " << message << std::endl;
+  }
+}
+
+// Mouse Hook: Low-level mouse callback
+LRESULT CALLBACK HkcwEngine2Plugin::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+  if (nCode >= 0 && hook_instance_ && hook_instance_->enable_interaction_) {
+    MSLLHOOKSTRUCT* info = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
+    int x = info->pt.x;
+    int y = info->pt.y;
+    
+    // Send different mouse events to JavaScript
+    const char* event_type = nullptr;
+    
+    if (wParam == WM_LBUTTONDOWN) {
+      event_type = "mousedown";
+    } else if (wParam == WM_LBUTTONUP) {
+      event_type = "mouseup";
+      std::cout << "[HKCW] [Hook] Mouse click at: " << x << "," << y << std::endl;
+    } else if (wParam == WM_MOUSEMOVE) {
+      // Optional: send mousemove (but might be too frequent)
+      // event_type = "mousemove";
+    }
+    
+    if (event_type) {
+      hook_instance_->SendClickToWebView(x, y, event_type);
+    }
+  }
+  
+  return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
+// Mouse Hook: Send mouse event to WebView (compatible with HKCW SDK)
+void HkcwEngine2Plugin::SendClickToWebView(int x, int y, const char* event_type) {
+  if (!webview_) {
+    return;
+  }
+  
+  // Dispatch hkcw:mouse event (SDK expects this format)
+  std::wstringstream script;
+  std::wstring wtype(event_type, event_type + strlen(event_type));
+  
+  script << L"(function() {"
+         << L"  var event = new CustomEvent('hkcw:mouse', {"
+         << L"    detail: {"
+         << L"      type: '" << wtype << L"',"
+         << L"      x: " << x << L","
+         << L"      y: " << y << L","
+         << L"      button: 0"  // 0 = left button
+         << L"    }"
+         << L"  });"
+         << L"  window.dispatchEvent(event);"
+         << L"})();";
+  
+  webview_->ExecuteScript(script.str().c_str(), nullptr);
+}
+
+// Mouse Hook: Setup hook
+void HkcwEngine2Plugin::SetupMouseHook() {
+  if (mouse_hook_) {
+    std::cout << "[HKCW] [Hook] Mouse hook already installed" << std::endl;
+    return;
+  }
+  
+  mouse_hook_ = SetWindowsHookExW(
+    WH_MOUSE_LL,
+    LowLevelMouseProc,
+    GetModuleHandleW(nullptr),
+    0
+  );
+  
+  if (mouse_hook_) {
+    std::cout << "[HKCW] [Hook] Mouse hook installed successfully" << std::endl;
+  } else {
+    DWORD error = GetLastError();
+    std::cout << "[HKCW] [Hook] ERROR: Failed to install mouse hook, error: " << error << std::endl;
+  }
+}
+
+// Mouse Hook: Remove hook
+void HkcwEngine2Plugin::RemoveMouseHook() {
+  if (mouse_hook_) {
+    UnhookWindowsHookEx(mouse_hook_);
+    mouse_hook_ = nullptr;
+    std::cout << "[HKCW] [Hook] Mouse hook removed" << std::endl;
+  }
+}
+
 bool HkcwEngine2Plugin::InitializeWallpaper(const std::string& url, bool enable_mouse_transparent) {
   std::cout << "[HKCW] ========== Initializing Wallpaper ==========" << std::endl;
   std::cout << "[HKCW] URL: " << url << std::endl;
@@ -772,14 +1083,13 @@ bool HkcwEngine2Plugin::InitializeWallpaper(const std::string& url, bool enable_
 
   std::cout << "[HKCW] WebView host created as child of WorkerW" << std::endl;
   
-  // If parent is Progman, we need to set Z-order behind SHELLDLL_DefView
+  // Always set Z-order behind SHELLDLL_DefView (icons always visible)
   HWND shelldll = FindWindowExW(worker_w_hwnd_, nullptr, L"SHELLDLL_DefView", nullptr);
   if (shelldll) {
-    std::cout << "[HKCW] Found SHELLDLL_DefView in parent, setting Z-order behind it..." << std::endl;
-    // Place our window behind SHELLDLL_DefView
+    std::cout << "[HKCW] Setting Z-order behind SHELLDLL_DefView (icons always on top)..." << std::endl;
     SetWindowPos(webview_host_hwnd_, shelldll, 0, 0, 0, 0, 
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    std::cout << "[HKCW] Z-order set: WebView -> behind -> SHELLDLL_DefView" << std::endl;
+    std::cout << "[HKCW] Z-order: Icons on top, WebView below" << std::endl;
   }
   
   // Verify window is actually visible
@@ -790,15 +1100,21 @@ bool HkcwEngine2Plugin::InitializeWallpaper(const std::string& url, bool enable_
             << ", Rect: " << rect.left << "," << rect.top 
             << " " << (rect.right - rect.left) << "x" << (rect.bottom - rect.top) << std::endl;
   
-  // Enable mouse transparency if requested
-  if (enable_mouse_transparent) {
-    // Set window as layered and transparent for mouse events
-    LONG_PTR exStyle = GetWindowLongPtrW(webview_host_hwnd_, GWL_EXSTYLE);
-    SetWindowLongPtrW(webview_host_hwnd_, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
-    SetLayeredWindowAttributes(webview_host_hwnd_, 0, 255, LWA_ALPHA);
-    std::cout << "[HKCW] Mouse transparency ENABLED" << std::endl;
+  // Always enable transparency (clicks pass through to desktop)
+  LONG_PTR exStyle = GetWindowLongPtrW(webview_host_hwnd_, GWL_EXSTYLE);
+  SetWindowLongPtrW(webview_host_hwnd_, GWL_EXSTYLE, exStyle | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+  SetLayeredWindowAttributes(webview_host_hwnd_, 0, 255, LWA_ALPHA);
+  std::cout << "[HKCW] Window transparency ENABLED (clicks pass through)" << std::endl;
+  
+  // Store interaction mode for mouse hook
+  enable_interaction_ = !enable_mouse_transparent;
+  
+  if (enable_interaction_) {
+    // Setup mouse hook to capture desktop clicks
+    std::cout << "[HKCW] Interactive mode: Setting up mouse hook..." << std::endl;
+    SetupMouseHook();
   } else {
-    std::cout << "[HKCW] Mouse transparency DISABLED (interactive mode)" << std::endl;
+    std::cout << "[HKCW] Wallpaper mode: No interaction" << std::endl;
   }
 
   // Show window
