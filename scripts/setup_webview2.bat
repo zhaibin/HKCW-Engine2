@@ -1,6 +1,10 @@
 @echo off
-echo Setting up WebView2 SDK...
-cd windows
+echo ================================
+echo  WebView2 SDK Setup
+echo ================================
+echo.
+
+cd /d "%~dp0..\windows"
 if not exist nuget.exe (
     echo Downloading NuGet...
     powershell -Command "Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile 'nuget.exe'"

@@ -60,14 +60,14 @@ await HkcwEngine2.navigateToUrl('https://new-url.com');
 
 ```bash
 # Install WebView2 SDK
-.\setup_webview2.bat
+.\scripts\setup_webview2.bat
 
 # Build and run example
 cd example
 flutter run -d windows
 
 # Or use quick build script
-.\build_and_run.bat
+.\scripts\build_and_run.bat
 ```
 
 ## 🏗️ Technical Architecture
@@ -109,11 +109,24 @@ Progman (Desktop Window)
 
 ## 📖 Documentation
 
-- [Solution Summary](SOLUTION_SUMMARY.md) - Technical deep dive
-- [Build Info](BUILD_INFO.md) - Compilation details
-- [Technical Notes](TECHNICAL_NOTES.md) - Implementation details
-- [Usage Examples](USAGE_EXAMPLES.md) - Code examples
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues
+### User Guides
+- [中文文档](docs/README_CN.md) - Chinese documentation
+- [Usage Examples](docs/USAGE_EXAMPLES.md) - Code examples
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues
+
+### Technical Guides
+- [Solution Summary](docs/SOLUTION_SUMMARY.md) - Technical deep dive
+- [Technical Notes](docs/TECHNICAL_NOTES.md) - Implementation details
+- [Build Info](docs/BUILD_INFO.md) - Compilation details
+
+### Optimization & Performance
+- [Optimization Guide](docs/OPTIMIZATION_GUIDE.md) - Performance tuning
+- [Optimization Completed](docs/OPTIMIZATION_COMPLETED.md) - P0/P1 optimizations
+- [Test Results](docs/OPTIMIZATION_TEST_RESULTS.md) - Verification results
+
+### Development
+- [GitHub Setup](docs/GITHUB_SETUP.md) - Push to GitHub guide
+- [Final Summary](docs/FINAL_SUMMARY.md) - Project overview
 
 ## 🎮 Example App
 
