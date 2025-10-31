@@ -1,0 +1,54 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.log
+*.lock
+
+# Windows
+windows/flutter/ephemeral/
+windows/packages/
+windows/nuget.exe
+example/windows/nuget.exe
+*.user
+*.suo
+*.ncb
+*.aps
+*.opendb
+*.db
+*.db-shm
+*.db-wal
+
+# Example app build
+example/build/
+example/.dart_tool/
+example/.flutter-plugins
+example/.flutter-plugins-dependencies
+example/.packages
+example/pubspec.lock
+example/windows/flutter/ephemeral/
+example/windows/packages/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Misc
+*.log
+*.tmp
+*.temp
+*~
+
