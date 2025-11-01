@@ -1225,6 +1225,15 @@ bool HkcwEngine2Plugin::InitializeWallpaper(const std::string& url, bool enable_
     StopWallpaper();
   }
   
+  // Clear any residual iframe data before initialization
+  {
+    std::lock_guard<std::mutex> lock(iframes_mutex_);
+    if (!iframes_.empty()) {
+      std::cout << "[HKCW] [iframe] Clearing " << iframes_.size() << " residual iframe(s)" << std::endl;
+      iframes_.clear();
+    }
+  }
+  
   // P1-2: Periodic cleanup check
   PeriodicCleanup();
 
@@ -1367,6 +1376,15 @@ bool HkcwEngine2Plugin::StopWallpaper() {
     webview_host_hwnd_ = nullptr;
   }
 
+  // Clear iframe data when stopping wallpaper
+  {
+    std::lock_guard<std::mutex> lock(iframes_mutex_);
+    if (!iframes_.empty()) {
+      std::cout << "[HKCW] [iframe] Clearing " << iframes_.size() << " iframe(s) on stop" << std::endl;
+      iframes_.clear();
+    }
+  }
+
   worker_w_hwnd_ = nullptr;
   is_initialized_ = false;
 
@@ -1389,6 +1407,15 @@ bool HkcwEngine2Plugin::NavigateToUrl(const std::string& url) {
     std::cout << "[HKCW] [Security] URL validation failed: " << url << std::endl;
     LogError("URL validation failed: " + url);
     return false;
+  }
+
+  // Clear iframe data when navigating to new page
+  {
+    std::lock_guard<std::mutex> lock(iframes_mutex_);
+    if (!iframes_.empty()) {
+      std::cout << "[HKCW] [iframe] Clearing " << iframes_.size() << " iframe(s) before navigation" << std::endl;
+      iframes_.clear();
+    }
   }
 
   // P1-2: Check if cleanup needed
