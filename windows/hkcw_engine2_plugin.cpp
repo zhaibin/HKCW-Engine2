@@ -907,24 +907,72 @@ void HkcwEngine2Plugin::HandleWebMessage(const std::string& message) {
 LRESULT CALLBACK HkcwEngine2Plugin::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
   if (nCode >= 0 && hook_instance_ && hook_instance_->enable_interaction_) {
     MSLLHOOKSTRUCT* info = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
-    int x = info->pt.x;
-    int y = info->pt.y;
+    POINT pt = info->pt;
     
-    // Send different mouse events to JavaScript
+    // Check if click position is occluded by a top-level application window
+    HWND window_at_point = WindowFromPoint(pt);
+    
+    // Get window class name and title for debugging
+    wchar_t className[256] = {0};
+    wchar_t windowTitle[256] = {0};
+    if (window_at_point) {
+      GetClassNameW(window_at_point, className, 256);
+      GetWindowTextW(window_at_point, windowTitle, 256);
+    }
+    
+    // Check if this is a top-level application window (not desktop layer)
+    bool is_app_window = false;
+    if (window_at_point) {
+      // Get the root owner window
+      HWND root_window = GetAncestor(window_at_point, GA_ROOT);
+      
+      // Check if it's a visible top-level window with WS_OVERLAPPEDWINDOW style
+      if (root_window && IsWindowVisible(root_window)) {
+        LONG style = GetWindowLongW(root_window, GWL_STYLE);
+        
+        // If it has title bar or is a popup window, it's likely an app window
+        if ((style & WS_CAPTION) || (style & WS_POPUP)) {
+          // But exclude desktop-related windows
+          wchar_t rootClassName[256] = {0};
+          GetClassNameW(root_window, rootClassName, 256);
+          
+          if (wcscmp(rootClassName, L"Progman") != 0 &&
+              wcscmp(rootClassName, L"WorkerW") != 0 &&
+              wcscmp(rootClassName, L"Shell_TrayWnd") != 0 &&  // Taskbar
+              wcsstr(rootClassName, L"Xaml") == nullptr) {  // System UI
+            is_app_window = true;
+          }
+        }
+      }
+    }
+    
+    // If occluded by app window, don't forward
+    if (is_app_window) {
+      // Silently ignore - app window is in front
+      return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+    
+    // Send different mouse events to JavaScript (desktop layer clicks)
     const char* event_type = nullptr;
     
     if (wParam == WM_LBUTTONDOWN) {
       event_type = "mousedown";
     } else if (wParam == WM_LBUTTONUP) {
       event_type = "mouseup";
-      std::cout << "[HKCW] [Hook] Mouse click at: " << x << "," << y << std::endl;
+      std::cout << "[HKCW] [Hook] Desktop click at: " << pt.x << "," << pt.y 
+                << " (Window: " << window_at_point << " Class: ";
+      std::wcout << className;
+      if (wcslen(windowTitle) > 0) {
+        std::wcout << L" Title: " << windowTitle;
+      }
+      std::wcout << L")" << std::endl;
     } else if (wParam == WM_MOUSEMOVE) {
       // Optional: send mousemove (but might be too frequent)
       // event_type = "mousemove";
     }
     
     if (event_type) {
-      hook_instance_->SendClickToWebView(x, y, event_type);
+      hook_instance_->SendClickToWebView(pt.x, pt.y, event_type);
     }
   }
   
