@@ -1062,6 +1062,7 @@ void HkcwEngine2Plugin::HandleIframeDataMessage(const std::string& json_data) {
   std::lock_guard<std::mutex> lock(iframes_mutex_);
   
   std::cout << "[HKCW] [iframe] Parsing iframe data..." << std::endl;
+  std::cout << "[HKCW] [iframe] Raw JSON: " << json_data << std::endl;
   
   // Clear existing data
   iframes_.clear();
@@ -1074,80 +1075,101 @@ void HkcwEngine2Plugin::HandleIframeDataMessage(const std::string& json_data) {
     return;
   }
   
+  size_t array_end = json_data.find("]", iframes_start);
+  if (array_end == std::string::npos) {
+    std::cout << "[HKCW] [iframe] No array end found" << std::endl;
+    return;
+  }
+  
   // Find each iframe object in the array
-  size_t pos = iframes_start;
-  while (true) {
-    // Find next iframe object
-    pos = json_data.find("{", pos + 1);
-    if (pos == std::string::npos) break;
+  size_t pos = iframes_start + 11;  // Start after "iframes":[
+  
+  while (pos < array_end) {
+    // Find next iframe object start
+    pos = json_data.find("{", pos);
+    if (pos == std::string::npos || pos >= array_end) break;
     
-    // Check if we've reached the end of the iframes array
-    size_t array_end = json_data.find("]", iframes_start);
-    if (pos > array_end) break;
+    // Find the end of this iframe object (matching closing brace)
+    int brace_count = 1;
+    size_t obj_end = pos + 1;
+    while (obj_end < array_end && brace_count > 0) {
+      if (json_data[obj_end] == '{') brace_count++;
+      else if (json_data[obj_end] == '}') brace_count--;
+      obj_end++;
+    }
+    
+    if (brace_count != 0) {
+      std::cout << "[HKCW] [iframe] ERROR: Unmatched braces at pos " << pos << std::endl;
+      break;
+    }
+    
+    // Extract iframe data within [pos, obj_end)
+    std::string obj_data = json_data.substr(pos, obj_end - pos);
+    std::cout << "[HKCW] [iframe] Object data: " << obj_data << std::endl;
     
     IframeInfo iframe;
     
     // Extract id
-    size_t id_start = json_data.find("\"id\":\"", pos);
-    if (id_start != std::string::npos && id_start < array_end) {
+    size_t id_start = obj_data.find("\"id\":\"");
+    if (id_start != std::string::npos) {
       id_start += 6;
-      size_t id_end = json_data.find("\"", id_start);
-      iframe.id = json_data.substr(id_start, id_end - id_start);
+      size_t id_end = obj_data.find("\"", id_start);
+      iframe.id = obj_data.substr(id_start, id_end - id_start);
     }
     
     // Extract src
-    size_t src_start = json_data.find("\"src\":\"", pos);
-    if (src_start != std::string::npos && src_start < array_end) {
+    size_t src_start = obj_data.find("\"src\":\"");
+    if (src_start != std::string::npos) {
       src_start += 7;
-      size_t src_end = json_data.find("\"", src_start);
-      iframe.src = json_data.substr(src_start, src_end - src_start);
+      size_t src_end = obj_data.find("\"", src_start);
+      iframe.src = obj_data.substr(src_start, src_end - src_start);
     }
     
     // Extract clickUrl
-    size_t url_start = json_data.find("\"clickUrl\":\"", pos);
-    if (url_start != std::string::npos && url_start < array_end) {
+    size_t url_start = obj_data.find("\"clickUrl\":\"");
+    if (url_start != std::string::npos) {
       url_start += 12;
-      size_t url_end = json_data.find("\"", url_start);
-      iframe.click_url = json_data.substr(url_start, url_end - url_start);
+      size_t url_end = obj_data.find("\"", url_start);
+      iframe.click_url = obj_data.substr(url_start, url_end - url_start);
     }
     
     // Extract bounds
-    size_t bounds_start = json_data.find("\"bounds\":{", pos);
-    if (bounds_start != std::string::npos && bounds_start < array_end) {
+    size_t bounds_start = obj_data.find("\"bounds\":{");
+    if (bounds_start != std::string::npos) {
       // Extract left
-      size_t left_start = json_data.find("\"left\":", bounds_start);
+      size_t left_start = obj_data.find("\"left\":", bounds_start);
       if (left_start != std::string::npos) {
         left_start += 7;
-        iframe.left = std::stoi(json_data.substr(left_start, 10));
+        iframe.left = std::stoi(obj_data.substr(left_start, 10));
       }
       
       // Extract top
-      size_t top_start = json_data.find("\"top\":", bounds_start);
+      size_t top_start = obj_data.find("\"top\":", bounds_start);
       if (top_start != std::string::npos) {
         top_start += 6;
-        iframe.top = std::stoi(json_data.substr(top_start, 10));
+        iframe.top = std::stoi(obj_data.substr(top_start, 10));
       }
       
       // Extract width
-      size_t width_start = json_data.find("\"width\":", bounds_start);
+      size_t width_start = obj_data.find("\"width\":", bounds_start);
       if (width_start != std::string::npos) {
         width_start += 8;
-        iframe.width = std::stoi(json_data.substr(width_start, 10));
+        iframe.width = std::stoi(obj_data.substr(width_start, 10));
       }
       
       // Extract height
-      size_t height_start = json_data.find("\"height\":", bounds_start);
+      size_t height_start = obj_data.find("\"height\":", bounds_start);
       if (height_start != std::string::npos) {
         height_start += 9;
-        iframe.height = std::stoi(json_data.substr(height_start, 10));
+        iframe.height = std::stoi(obj_data.substr(height_start, 10));
       }
     }
     
     // Extract visible
-    size_t visible_start = json_data.find("\"visible\":", pos);
-    if (visible_start != std::string::npos && visible_start < array_end) {
+    size_t visible_start = obj_data.find("\"visible\":");
+    if (visible_start != std::string::npos) {
       visible_start += 10;
-      iframe.visible = (json_data.substr(visible_start, 4) == "true");
+      iframe.visible = (obj_data.substr(visible_start, 4) == "true");
     } else {
       iframe.visible = true;  // Default to visible
     }
@@ -1155,10 +1177,13 @@ void HkcwEngine2Plugin::HandleIframeDataMessage(const std::string& json_data) {
     // Add to list
     iframes_.push_back(iframe);
     
-    std::cout << "[HKCW] [iframe] Added iframe: id=" << iframe.id 
+    std::cout << "[HKCW] [iframe] Added iframe #" << iframes_.size() << ": id=" << iframe.id 
               << " pos=(" << iframe.left << "," << iframe.top << ")"
               << " size=" << iframe.width << "x" << iframe.height
               << " url=" << iframe.click_url << std::endl;
+    
+    // Move to next object
+    pos = obj_end;
   }
   
   std::cout << "[HKCW] [iframe] Total iframes: " << iframes_.size() << std::endl;
