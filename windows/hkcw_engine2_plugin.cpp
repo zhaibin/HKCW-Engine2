@@ -865,7 +865,11 @@ void HkcwEngine2Plugin::HandleWebMessage(const std::string& message) {
   std::cout << "[HKCW] [API] Received message: " << message << std::endl;
   
   // Parse JSON message (support both uppercase and lowercase)
-  if (message.find("\"type\":\"OPEN_URL\"") != std::string::npos || 
+  if (message.find("\"type\":\"IFRAME_DATA\"") != std::string::npos) {
+    // Handle iframe data synchronization
+    HandleIframeDataMessage(message);
+  }
+  else if (message.find("\"type\":\"OPEN_URL\"") != std::string::npos || 
       message.find("\"type\":\"openURL\"") != std::string::npos) {
     // Extract URL from JSON
     size_t url_start = message.find("\"url\":\"") + 7;
@@ -952,6 +956,24 @@ LRESULT CALLBACK HkcwEngine2Plugin::LowLevelMouseProc(int nCode, WPARAM wParam, 
       return CallNextHookEx(nullptr, nCode, wParam, lParam);
     }
     
+    // Check if click is on an iframe ad (priority handling)
+    if (wParam == WM_LBUTTONUP) {
+      IframeInfo* iframe = hook_instance_->GetIframeAtPoint(pt.x, pt.y);
+      
+      if (iframe && !iframe->click_url.empty()) {
+        std::cout << "[HKCW] [iframe] Click detected on iframe: " << iframe->id 
+                  << " at (" << pt.x << "," << pt.y << ")" << std::endl;
+        std::cout << "[HKCW] [iframe] Opening ad URL: " << iframe->click_url << std::endl;
+        
+        // Open the ad URL directly (bypass iframe sandbox restrictions)
+        std::wstring url_wide(iframe->click_url.begin(), iframe->click_url.end());
+        ShellExecuteW(nullptr, L"open", url_wide.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        
+        // Don't forward to WebView - handled by native layer
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+      }
+    }
+    
     // Send different mouse events to JavaScript (desktop layer clicks)
     const char* event_type = nullptr;
     
@@ -1033,6 +1055,132 @@ void HkcwEngine2Plugin::RemoveMouseHook() {
     mouse_hook_ = nullptr;
     std::cout << "[HKCW] [Hook] Mouse hook removed" << std::endl;
   }
+}
+
+// iframe Ad Detection: Handle iframe data from JavaScript
+void HkcwEngine2Plugin::HandleIframeDataMessage(const std::string& json_data) {
+  std::lock_guard<std::mutex> lock(iframes_mutex_);
+  
+  std::cout << "[HKCW] [iframe] Parsing iframe data..." << std::endl;
+  
+  // Clear existing data
+  iframes_.clear();
+  
+  // Simple JSON parsing for iframe array
+  // Format: {"type":"IFRAME_DATA","iframes":[{...},{...}]}
+  size_t iframes_start = json_data.find("\"iframes\":[");
+  if (iframes_start == std::string::npos) {
+    std::cout << "[HKCW] [iframe] No iframes array found" << std::endl;
+    return;
+  }
+  
+  // Find each iframe object in the array
+  size_t pos = iframes_start;
+  while (true) {
+    // Find next iframe object
+    pos = json_data.find("{", pos + 1);
+    if (pos == std::string::npos) break;
+    
+    // Check if we've reached the end of the iframes array
+    size_t array_end = json_data.find("]", iframes_start);
+    if (pos > array_end) break;
+    
+    IframeInfo iframe;
+    
+    // Extract id
+    size_t id_start = json_data.find("\"id\":\"", pos);
+    if (id_start != std::string::npos && id_start < array_end) {
+      id_start += 6;
+      size_t id_end = json_data.find("\"", id_start);
+      iframe.id = json_data.substr(id_start, id_end - id_start);
+    }
+    
+    // Extract src
+    size_t src_start = json_data.find("\"src\":\"", pos);
+    if (src_start != std::string::npos && src_start < array_end) {
+      src_start += 7;
+      size_t src_end = json_data.find("\"", src_start);
+      iframe.src = json_data.substr(src_start, src_end - src_start);
+    }
+    
+    // Extract clickUrl
+    size_t url_start = json_data.find("\"clickUrl\":\"", pos);
+    if (url_start != std::string::npos && url_start < array_end) {
+      url_start += 12;
+      size_t url_end = json_data.find("\"", url_start);
+      iframe.click_url = json_data.substr(url_start, url_end - url_start);
+    }
+    
+    // Extract bounds
+    size_t bounds_start = json_data.find("\"bounds\":{", pos);
+    if (bounds_start != std::string::npos && bounds_start < array_end) {
+      // Extract left
+      size_t left_start = json_data.find("\"left\":", bounds_start);
+      if (left_start != std::string::npos) {
+        left_start += 7;
+        iframe.left = std::stoi(json_data.substr(left_start, 10));
+      }
+      
+      // Extract top
+      size_t top_start = json_data.find("\"top\":", bounds_start);
+      if (top_start != std::string::npos) {
+        top_start += 6;
+        iframe.top = std::stoi(json_data.substr(top_start, 10));
+      }
+      
+      // Extract width
+      size_t width_start = json_data.find("\"width\":", bounds_start);
+      if (width_start != std::string::npos) {
+        width_start += 8;
+        iframe.width = std::stoi(json_data.substr(width_start, 10));
+      }
+      
+      // Extract height
+      size_t height_start = json_data.find("\"height\":", bounds_start);
+      if (height_start != std::string::npos) {
+        height_start += 9;
+        iframe.height = std::stoi(json_data.substr(height_start, 10));
+      }
+    }
+    
+    // Extract visible
+    size_t visible_start = json_data.find("\"visible\":", pos);
+    if (visible_start != std::string::npos && visible_start < array_end) {
+      visible_start += 10;
+      iframe.visible = (json_data.substr(visible_start, 4) == "true");
+    } else {
+      iframe.visible = true;  // Default to visible
+    }
+    
+    // Add to list
+    iframes_.push_back(iframe);
+    
+    std::cout << "[HKCW] [iframe] Added iframe: id=" << iframe.id 
+              << " pos=(" << iframe.left << "," << iframe.top << ")"
+              << " size=" << iframe.width << "x" << iframe.height
+              << " url=" << iframe.click_url << std::endl;
+  }
+  
+  std::cout << "[HKCW] [iframe] Total iframes: " << iframes_.size() << std::endl;
+}
+
+// iframe Ad Detection: Check if click is on an iframe
+IframeInfo* HkcwEngine2Plugin::GetIframeAtPoint(int x, int y) {
+  std::lock_guard<std::mutex> lock(iframes_mutex_);
+  
+  for (auto& iframe : iframes_) {
+    if (!iframe.visible) continue;
+    
+    int right = iframe.left + iframe.width;
+    int bottom = iframe.top + iframe.height;
+    
+    if (x >= iframe.left && x < right &&
+        y >= iframe.top && y < bottom) {
+      return &iframe;
+    }
+  }
+  
+  return nullptr;
 }
 
 bool HkcwEngine2Plugin::InitializeWallpaper(const std::string& url, bool enable_mouse_transparent) {

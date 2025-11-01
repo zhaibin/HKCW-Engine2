@@ -15,8 +15,21 @@
 #include <atomic>
 #include <fstream>
 #include <psapi.h>
+#include <mutex>
 
 namespace hkcw_engine2 {
+
+// iframe information for ad click detection
+struct IframeInfo {
+  std::string id;
+  std::string src;
+  std::string click_url;
+  int left;
+  int top;
+  int width;
+  int height;
+  bool visible;
+};
 
 // P0-1: Resource Tracker for memory leak detection
 class ResourceTracker {
@@ -97,6 +110,10 @@ class HkcwEngine2Plugin : public flutter::Plugin {
   void RemoveMouseHook();
   static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
   void SendClickToWebView(int x, int y, const char* event_type = "mouseup");
+  
+  // iframe Ad Detection: Handle iframe click regions
+  void HandleIframeDataMessage(const std::string& json_data);
+  IframeInfo* GetIframeAtPoint(int x, int y);
 
   HWND webview_host_hwnd_ = nullptr;
   HWND worker_w_hwnd_ = nullptr;
@@ -120,6 +137,10 @@ class HkcwEngine2Plugin : public flutter::Plugin {
   HHOOK mouse_hook_ = nullptr;
   static HkcwEngine2Plugin* hook_instance_;
   bool enable_interaction_ = false;
+  
+  // iframe Ad Detection
+  std::vector<IframeInfo> iframes_;
+  std::mutex iframes_mutex_;
 };
 
 }  // namespace hkcw_engine2

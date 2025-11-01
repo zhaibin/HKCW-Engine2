@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iframe 广告测试 - HKCW Engine</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .info-box {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .sdk-status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .sdk-status.loaded {
+            background: #4caf50;
+        }
+        
+        .sdk-status.not-loaded {
+            background: #f44336;
+        }
+        
+        .ad-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .ad-container {
+            background: rgba(255,255,255,0.95);
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .ad-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .ad-iframe-wrapper {
+            position: relative;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        iframe {
+            display: block;
+            border: none;
+            width: 100%;
+        }
+        
+        .ad-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .ad-url {
+            color: #2196f3;
+            word-break: break-all;
+        }
+        
+        .log-panel {
+            background: rgba(0,0,0,0.8);
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .log-panel h3 {
+            margin-bottom: 15px;
+            color: #4caf50;
+        }
+        
+        .log-entry {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            border-radius: 5px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            border-left: 3px solid;
+        }
+        
+        .log-entry.success {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: #4caf50;
+        }
+        
+        .log-entry.info {
+            background: rgba(33, 150, 243, 0.1);
+            border-color: #2196f3;
+        }
+        
+        .log-entry.warning {
+            background: rgba(255, 152, 0, 0.1);
+            border-color: #ff9800;
+        }
+        
+        .log-entry.error {
+            background: rgba(244, 67, 54, 0.1);
+            border-color: #f44336;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            background: #2196f3;
+            color: white;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #1976d2;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 iframe 广告点击测试</h1>
+        
+        <div class="info-box">
+            <strong>HKCW SDK 状态:</strong>
+            <span id="sdkStatus" class="sdk-status not-loaded">未加载</span>
+            <div style="margin-top: 10px; font-size: 14px;">
+                <strong>测试说明:</strong> 点击下方任意广告 iframe，将通过 Native 层直接打开广告 URL（绕过同源策略限制）
+            </div>
+        </div>
+        
+        <div class="ad-grid">
+            <!-- 广告位 1: 横幅广告 -->
+            <div class="ad-container">
+                <div class="ad-label">📌 横幅广告 (300x250)</div>
+                <div class="ad-iframe-wrapper" data-ad-url="https://www.example.com/ad1">
+                    <iframe id="ad-banner-1" 
+                            src="about:blank" 
+                            width="300" 
+                            height="250"
+                            data-ad-url="https://www.example.com/ad1"
+                            data-ad-clickable="true">
+                    </iframe>
+                </div>
+                <div class="ad-info">
+                    点击 URL: <span class="ad-url">https://www.example.com/ad1</span>
+                </div>
+            </div>
+            
+            <!-- 广告位 2: 方形广告 -->
+            <div class="ad-container">
+                <div class="ad-label">📌 方形广告 (250x250)</div>
+                <div class="ad-iframe-wrapper" data-ad-url="https://www.google.com">
+                    <iframe id="ad-square-1" 
+                            src="about:blank" 
+                            width="250" 
+                            height="250"
+                            data-ad-url="https://www.google.com"
+                            data-ad-clickable="true">
+                    </iframe>
+                </div>
+                <div class="ad-info">
+                    点击 URL: <span class="ad-url">https://www.google.com</span>
+                </div>
+            </div>
+            
+            <!-- 广告位 3: 竖版广告 -->
+            <div class="ad-container">
+                <div class="ad-label">📌 竖版广告 (160x600)</div>
+                <div class="ad-iframe-wrapper" data-ad-url="https://www.bing.com">
+                    <iframe id="ad-vertical-1" 
+                            src="about:blank" 
+                            width="160" 
+                            height="600"
+                            data-ad-url="https://www.bing.com"
+                            data-ad-clickable="true">
+                    </iframe>
+                </div>
+                <div class="ad-info">
+                    点击 URL: <span class="ad-url">https://www.bing.com</span>
+                </div>
+            </div>
+            
+            <!-- 广告位 4: 模拟第三方广告 -->
+            <div class="ad-container">
+                <div class="ad-label">📌 第三方广告 (300x250) - 跨域 iframe</div>
+                <div class="ad-iframe-wrapper" data-ad-url="https://github.com/zhaibin/HKCW-Engine2">
+                    <iframe id="ad-third-party" 
+                            src="about:blank" 
+                            width="300" 
+                            height="250"
+                            data-ad-url="https://github.com/zhaibin/HKCW-Engine2"
+                            data-ad-clickable="true"
+                            sandbox="allow-scripts">
+                    </iframe>
+                </div>
+                <div class="ad-info">
+                    点击 URL: <span class="ad-url">https://github.com/zhaibin/HKCW-Engine2</span><br>
+                    <small>⚠️ 带 sandbox 限制，无法直接访问内部 DOM</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="loadIframeAds()">🔄 加载广告内容</button>
+            <button onclick="clearLogs()">🗑️ 清空日志</button>
+            <button onclick="testManualClick()">🖱️ 测试手动点击</button>
+        </div>
+        
+        <div class="log-panel">
+            <h3>📋 操作日志</h3>
+            <div id="logContainer"></div>
+        </div>
+    </div>
+    
+    <!-- 加载 HKCW SDK -->
+    <script src="https://theme-web.haokan.mobi/sdk/hkcw-engine.js"></script>
+    
+    <script>
+        // 日志函数
+        function addLog(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.insertBefore(entry, logContainer.firstChild);
+        }
+        
+        function clearLogs() {
+            document.getElementById('logContainer').innerHTML = '';
+            addLog('日志已清空', 'info');
+        }
+        
+        // 加载 iframe 广告内容（模拟）
+        function loadIframeAds() {
+            const iframes = document.querySelectorAll('iframe[data-ad-clickable]');
+            
+            iframes.forEach((iframe, index) => {
+                const adContent = `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <style>
+                            body {
+                                margin: 0;
+                                padding: 20px;
+                                font-family: Arial, sans-serif;
+                                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                                color: white;
+                                display: flex;
+                                flex-direction: column;
+                                justify-content: center;
+                                align-items: center;
+                                height: 100vh;
+                                text-align: center;
+                            }
+                            h2 {
+                                margin-bottom: 10px;
+                            }
+                            p {
+                                font-size: 14px;
+                            }
+                            .click-me {
+                                margin-top: 20px;
+                                padding: 15px 30px;
+                                background: white;
+                                color: #f5576c;
+                                border-radius: 25px;
+                                font-weight: bold;
+                                cursor: pointer;
+                                animation: pulse 2s infinite;
+                            }
+                            @keyframes pulse {
+                                0%, 100% { transform: scale(1); }
+                                50% { transform: scale(1.05); }
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <h2>🎯 广告 #${index + 1}</h2>
+                        <p>点击任意位置跳转</p>
+                        <div class="click-me">点我了解更多 →</div>
+                        <p style="font-size: 12px; margin-top: 20px;">
+                            目标: ${iframe.dataset.adUrl}
+                        </p>
+                    </body>
+                    </html>
+                `;
+                
+                iframe.srcdoc = adContent;
+            });
+            
+            addLog('✅ 所有广告内容已加载', 'success');
+            
+            // 等待 iframe 渲染后同步到 Native
+            setTimeout(syncIframesToNative, 1000);
+        }
+        
+        // 同步 iframe 数据到 Native
+        function syncIframesToNative() {
+            if (!window.HKCW) {
+                addLog('❌ HKCW SDK 未加载，无法同步 iframe 数据', 'error');
+                return;
+            }
+            
+            const iframes = document.querySelectorAll('iframe[data-ad-clickable]');
+            const iframeData = [];
+            
+            iframes.forEach((iframe, index) => {
+                const rect = iframe.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                
+                iframeData.push({
+                    index: index,
+                    id: iframe.id || `iframe-${index}`,
+                    src: iframe.src || iframe.srcdoc ? 'srcdoc' : '',
+                    bounds: {
+                        left: Math.round(rect.left * dpr),
+                        top: Math.round(rect.top * dpr),
+                        width: Math.round(rect.width * dpr),
+                        height: Math.round(rect.height * dpr)
+                    },
+                    clickUrl: iframe.dataset.adUrl || iframe.src,
+                    visible: iframe.offsetWidth > 0 && iframe.offsetHeight > 0
+                });
+            });
+            
+            // 发送到 Native
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage({
+                    type: 'IFRAME_DATA',
+                    iframes: iframeData
+                });
+                
+                addLog(`✅ 已同步 ${iframeData.length} 个 iframe 到 Native 层`, 'success');
+                addLog(`   详细数据: ${JSON.stringify(iframeData, null, 2)}`, 'info');
+            } else {
+                addLog('⚠️ WebView2 环境未检测到，iframe 数据未同步', 'warning');
+            }
+        }
+        
+        // 测试手动点击
+        function testManualClick() {
+            addLog('🖱️ 请点击任意广告 iframe 进行测试', 'info');
+        }
+        
+        // 初始化
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                if (window.HKCW) {
+                    document.getElementById('sdkStatus').textContent = 'SDK v' + HKCW.version;
+                    document.getElementById('sdkStatus').className = 'sdk-status loaded';
+                    
+                    addLog('✅ HKCW SDK 加载成功 v' + HKCW.version, 'success');
+                    addLog(`   DPI Scale: ${HKCW.dpiScale}`, 'info');
+                    addLog(`   Screen: ${HKCW.screenWidth}x${HKCW.screenHeight}`, 'info');
+                    addLog(`   Interaction: ${HKCW.interactionEnabled ? '已启用' : '已禁用'}`, 'info');
+                    
+                    // 自动加载广告
+                    loadIframeAds();
+                    
+                    // 定期同步 iframe 数据
+                    setInterval(syncIframesToNative, 2000);
+                    
+                } else {
+                    addLog('❌ HKCW SDK 未加载', 'error');
+                }
+            }, 500);
+        });
+        
+        // 监听窗口变化
+        window.addEventListener('resize', () => {
+            addLog('🔄 窗口大小改变，重新同步 iframe 数据', 'info');
+            syncIframesToNative();
+        });
+    </script>
+</body>
+</html>
+
