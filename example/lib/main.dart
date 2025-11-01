@@ -14,10 +14,10 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final TextEditingController _urlController = TextEditingController(
-    text: 'file:///E:/Projects/HKCW-Engine2/test_api.html',
+    text: 'file:///E:/Projects/HKCW-Engine2/test_iframe_ads.html',
   );
   bool _isRunning = false;
-  bool _mouseTransparent = false;  // Disable for API testing
+  bool _mouseTransparent = false;  // Disable for iframe ad testing
 
   @override
   void initState() {
